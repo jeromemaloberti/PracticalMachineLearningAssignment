@@ -1,0 +1,98 @@
+---
+title: "Practical Machine Learning"
+author: "Jerome Maloberti"
+date: "April 10, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+## Goal
+The goal of this project is to predict the manner in which 6 participants correctly performed on exercises with the data from accelerometors on the belt, forearm, arm and dumbell. This is the "classe" variable in the training set. 
+
+## Data preparation
+For the sake of reproducibilty, let's set a seed value.
+```{r}
+set.seed(42)
+```
+### Libraries
+```{r}
+library(caret)
+```
+### Training and test set
+```{r}
+training <- read.csv("pml-training.csv", na.strings = c("", "NA"))
+testing <- read.csv("pml-testing.csv", na.strings = c("", "NA"))
+#summary(training) # it is quite verbose
+#head(training)
+```
+
+### Uninteresting variables
+From the summary and the head, some variables are obviously useless:
+
+ * X, since it is the instance number
+ * user_name, it wouldn't generalize to new data even if it was useful for prediction
+ * raw_timestamp_part1, raw_timestamp_part2 and cvtd_timestamp are also too specific to be generalized to new data. 
+ * new_window is skewed (no: 19216, yes: 406), so it is unlikely to be useful.
+```{r}
+training <- training[, -c(1:6)]
+```
+ - many variables have a lot of NAs
+```{r}
+bad <- sapply(training, function(col) sum(is.na(col)) > 19000)
+training <- training[, -which(bad)]
+```
+
+### Validation set
+The set is big enough, so we put aside 20% of the training data for the validation.
+
+```{r}
+training.index <- createDataPartition(y = training$classe, p = 0.8, list = FALSE)
+training.set <- training[training.index, ]
+validation.set <- training[-training.index, ]
+dim(training.set)
+dim(validation.set)
+```
+
+## Model training
+
+### Decision tree
+
+A decision tree may not be the most accurate model, but it is very understandable, and a good start.
+```{r}
+fit.tree <- train(classe ~ ., data = training.set, method = "rpart")
+fit.tree
+```
+Accuracy is 0.55 (55%), quite disappointing for a training set.
+
+### Random forest
+Random forests are usually accurate, but cannot be understood.
+
+```{r}
+# for multicore processing
+library(doMC)
+registerDoMC(4) # 4 cores
+tc <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
+fit.rf <- train(classe ~ ., data = training.set, method = "rf", trainControl = tc)
+fit.rf
+```
+
+The accuracy is 0.9961 (99.61%) on the training set, which is much better.
+
+## Validation
+Let's test the model on the validation test.
+```{r}
+validation.pred <- predict(fit.rf, newdata = validation.set)
+confusionMatrix(validation.pred, validation.set$classe)
+```
+Accuracy is .999 (99.9%) which is excellent.
+
+## Testing set
+Let's test the model on the testing set.
+```{r}
+testing.pred <- predict(fit.rf, newdata = testing)
+testing.pred
+```
